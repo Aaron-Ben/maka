@@ -326,8 +326,9 @@ export function connectionModelsEnumerateAccount(
  * With nothing enabled, the account's own list is the better source than the
  * provider fallback: it names what this key can serve, and the fallback's first
  * entry is often a premium model the user never chose (#5493). A no-cost
- * variant goes first so verifying the credential does not bill it. A shipped
- * snapshot is not the account's list, so it still yields to the fallback.
+ * variant goes first so verifying the credential does not bill it, and an
+ * entry that cannot chat is skipped. A shipped snapshot is not the account's
+ * list, so it still yields to the fallback.
  */
 export function connectionTestModelId(
   connection: ConnectionModelAuthorityInput,
@@ -340,12 +341,19 @@ export function connectionTestModelId(
   const preferred = listed
     ? [...enabled.filter((id) => listed.has(id)), ...enabled.filter((id) => !listed.has(id))]
     : enabled;
-  const accountInventory = listed
-    ? [
-        ...discoveredIds.filter(isNoCostModelId),
-        ...discoveredIds.filter((id) => !isNoCostModelId(id)),
-      ]
+  // The probe is a chat request and tries one model, so an entry the provider
+  // says cannot chat would fail a valid credential. Enabled ids stay untouched:
+  // those are the user's own choice to test.
+  const chatInventory = listed
+    ? (connection.models ?? [])
+        .filter((model) => !isModelExplicitlyUnsupportedForChat(model))
+        .map(({ id }) => id.trim())
+        .filter((id) => id.length > 0)
     : [];
+  const accountInventory = [
+    ...chatInventory.filter(isNoCostModelId),
+    ...chatInventory.filter((id) => !isNoCostModelId(id)),
+  ];
   const candidates = [...preferred, ...accountInventory, ...fallbackModels, ...discoveredIds];
   for (const candidate of candidates) {
     const id = candidate.trim();
@@ -357,6 +365,41 @@ export function connectionTestModelId(
 /** OpenRouter's convention for a model variant served at no charge. */
 function isNoCostModelId(id: string): boolean {
   return id.endsWith(':free');
+}
+
+/**
+ * Whether a declared output modality rules the model out of chat.
+ *
+ * A model that answers only in images or only in audio cannot hold a
+ * conversation, and this is the form that fact actually arrives in: the
+ * generated metadata records `modalities.output` for every such model and has
+ * never set `capabilities.imageGeneration` for any of them, so the capability
+ * check below could not fire on bundled data.
+ *
+ * An EMPTY list is not evidence. A provider that declared no output modality
+ * and a generator bug that dropped them produce the same shape. Only a
+ * non-empty list says something, and what it says is what it lists.
+ */
+function declaresNoTextOutput(model: ModelInfo): boolean {
+  const output = model.modalities?.output;
+  if (output === undefined || output.length === 0) return false;
+  return !output.includes('text');
+}
+
+export function isModelExplicitlyUnsupportedForChat(model: ModelInfo): boolean {
+  const caps = model.capabilities;
+  if (caps?.chat === false) return true;
+  // Only an explicit `chat: true` outranks the modality. `reasoning` and
+  // `functionCalling` do not: a TTS model carrying `reasoning: true` is
+  // describing how it composes speech, and it still cannot answer in text.
+  if (caps?.chat !== true && declaresNoTextOutput(model)) return true;
+  if (!caps) return false;
+  return (
+    caps.imageGeneration === true &&
+    caps.chat !== true &&
+    caps.reasoning !== true &&
+    caps.functionCalling !== true
+  );
 }
 
 /**

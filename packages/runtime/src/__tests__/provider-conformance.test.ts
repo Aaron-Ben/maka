@@ -1339,6 +1339,39 @@ describe('models.dev provider conformance', () => {
     assert.deepEqual(requestedModels, ['acme/model-b:free']);
   });
 
+  test('connection probe skips a no-cost inventory model that cannot chat', async () => {
+    // The probe is a chat request and tries one model, so an image-only `:free`
+    // entry would report a valid credential as failed.
+    const requestedModels: string[] = [];
+    const server = await startJsonServer(async (request, response) => {
+      const body = JSON.parse(await readBody(request)) as { model: string };
+      requestedModels.push(body.model);
+      respondJson(response, 200, {});
+    });
+    const result = await testConnection(
+      {
+        slug: 'openrouter-image-free',
+        name: 'OpenRouter',
+        providerType: 'openrouter',
+        baseUrl: `${server.url}/v1`,
+        defaultModel: '',
+        enabledModelIds: [],
+        models: [
+          { id: 'acme/image:free', capabilities: { chat: false, imageGeneration: true } },
+          { id: 'acme/chat', capabilities: { chat: true } },
+        ],
+        modelSource: 'fetched',
+        enabled: true,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      'openrouter-key',
+    );
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(requestedModels, ['acme/chat']);
+  });
+
   test('connection probe keeps the provider fallback ahead of a shipped snapshot when nothing is enabled', async () => {
     // Only an account-enumerated list may displace the fallback. A snapshot this
     // build shipped says nothing about what the key can serve (#1584).
