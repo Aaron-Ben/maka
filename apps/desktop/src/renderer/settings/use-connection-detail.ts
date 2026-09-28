@@ -506,8 +506,8 @@ export function useConnectionDetail(props: ConnectionDetailProps) {
     setTesting(true);
     try {
       // No model argument: `resolveConnectionTestModel` already picks one from
-      // the enabled ids, then the provider fallbacks, and drops any candidate
-      // the fetched inventory doesn't list. Naming `connection.defaultModel`
+      // the enabled ids, then the account's fetched inventory, then the provider
+      // fallbacks. Naming `connection.defaultModel`
       // here handed that choice to the layer with the least information — and
       // to a field this page no longer owns, which is '' once the user enables
       // no models. Left unset, a zero-model connection still verifies its
@@ -515,8 +515,8 @@ export function useConnectionDetail(props: ConnectionDetailProps) {
       const result: ConnectionTestResult = await props.bridge.test(connectionIdentity);
       if (!isConnectionDetailCurrent(lifecycle)) return;
       if (result.ok) {
-        // The backend probes the enabled models first, then the provider
-        // fallback. When
+        // The backend probes the enabled models first, then the account's
+        // inventory or the provider fallback. When
         // the model that actually answered isn't one the user enabled, a plain
         // "connection succeeded · <model>" reads as if their selection never
         // took — and hides that their chosen model is currently down. Name both
