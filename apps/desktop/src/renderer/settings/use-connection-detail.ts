@@ -29,7 +29,12 @@ import {
   type ProjectedLlmConnection,
   type ProviderType,
 } from '@maka/core/llm-connections';
-import { PROVIDER_REGISTRY, connectionEnabledModelIds } from '@maka/core/llm-connections';
+import {
+  PROVIDER_REGISTRY,
+  connectionEnabledModelIds,
+  connectionTestModelId,
+  providerFallbackModelIds,
+} from '@maka/core/llm-connections';
 import { isRetiredProvider } from '@maka/core/provider-registry';
 import {
   normalizeModelOverrides,
@@ -285,6 +290,14 @@ export function useConnectionDetail(props: ConnectionDetailProps) {
   }, [connection.defaultModel, connection.enabledModelIds, connection.connectionId]);
 
   const modelChoices = connection.catalogEntries;
+  // The model the next test will probe, resolved by the same rule the Runtime
+  // applies to the stored connection, so the page can name it before a request
+  // is spent on it (#5493).
+  const testModelId = connectionTestModelId(connection, providerFallbackModelIds(defaults));
+  const testModelLabel =
+    testModelId === undefined
+      ? undefined
+      : modelChoices.find((entry) => entry.id === testModelId)?.displayName?.trim() || testModelId;
 
   /**
    * Save ONE row. The patch used to carry both fields whichever row asked for
@@ -675,6 +688,7 @@ export function useConnectionDetail(props: ConnectionDetailProps) {
     setBaseUrl,
     enabledModelIds,
     modelChoices,
+    testModelLabel,
     busy,
     testing,
     fetchingModels,

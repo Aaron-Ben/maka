@@ -310,6 +310,56 @@ export function connectionModelsEnumerateAccount(
 }
 
 /**
+ * The model a connection test probes when the caller names none — the one
+ * answer the Runtime's probe and the settings page's preview of it share.
+ *
+ * Prefer a still-live configured model. Legacy connections without a
+ * discovered inventory keep the historical default/fallback order.
+ *
+ * A `'live'` catalog ORDERS the user's own candidates, it does not filter
+ * them: a model the provider just listed is likelier to answer, so probe that
+ * one first. But no catalog removes a candidate. A snapshot would otherwise
+ * redirect the probe onto a model the user never chose (#1584), and even a
+ * live list can lag the account — when it does, the provider's own error is a
+ * better answer than a model Maka substituted silently.
+ *
+ * With nothing enabled, the account's own list is the better source than the
+ * provider fallback: it names what this key can serve, and the fallback's first
+ * entry is often a premium model the user never chose (#5493). A no-cost
+ * variant goes first so verifying the credential does not bill it. A shipped
+ * snapshot is not the account's list, so it still yields to the fallback.
+ */
+export function connectionTestModelId(
+  connection: ConnectionModelAuthorityInput,
+  fallbackModels: readonly string[],
+): string | undefined {
+  const discoveredIds =
+    connection.models?.map(({ id }) => id.trim()).filter((id) => id.length > 0) ?? [];
+  const enabled = connectionEnabledModelIds(connection);
+  const listed = connectionModelsEnumerateAccount(connection) ? new Set(discoveredIds) : undefined;
+  const preferred = listed
+    ? [...enabled.filter((id) => listed.has(id)), ...enabled.filter((id) => !listed.has(id))]
+    : enabled;
+  const accountInventory = listed
+    ? [
+        ...discoveredIds.filter(isNoCostModelId),
+        ...discoveredIds.filter((id) => !isNoCostModelId(id)),
+      ]
+    : [];
+  const candidates = [...preferred, ...accountInventory, ...fallbackModels, ...discoveredIds];
+  for (const candidate of candidates) {
+    const id = candidate.trim();
+    if (id) return id;
+  }
+  return undefined;
+}
+
+/** OpenRouter's convention for a model variant served at no charge. */
+function isNoCostModelId(id: string): boolean {
+  return id.endsWith(':free');
+}
+
+/**
  * The model this connection runs for this id, or `undefined` if the user never
  * enabled it.
  *
