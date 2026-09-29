@@ -116,13 +116,11 @@ export class PluginExecutorBackend implements AgentBackend {
     } finally {
       queue.noteConsumerDetached();
       abort.abort(new Error('Plugin executor event consumer detached'));
-      const returnedResult = await producer.catch(() => false);
-      if (
-        returnedResult &&
-        this.#binding.acknowledgeExecution &&
-        !acknowledged &&
-        this.#binding.abandonExecution
-      )
+      await producer.catch(() => undefined);
+      // Abandon every unacknowledged execution, including one whose result the
+      // Runtime rejected before publishing it; the Plugin ignores turns it
+      // never settled.
+      if (this.#binding.acknowledgeExecution && !acknowledged && this.#binding.abandonExecution)
         await this.#binding.abandonExecution(this.sessionId, input.turnId).catch(() => undefined);
       this.#active.delete(active);
     }

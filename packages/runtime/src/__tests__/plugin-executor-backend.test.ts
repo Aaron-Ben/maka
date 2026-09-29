@@ -118,6 +118,37 @@ test('failed Plugin acknowledgement abandons the settled external execution', as
   }
 });
 
+test('a settled Plugin execution whose result the Runtime rejects is abandoned', async () => {
+  const { root, binding } = fixture(async () => ({
+    status: 'completed',
+    text: 'x'.repeat(256 * 1024 + 1),
+  }));
+  const acknowledged: string[] = [];
+  const abandoned: string[] = [];
+  const backend = new PluginExecutorBackend({
+    sessionId: 'session-a',
+    cwd: '/workspace',
+    binding: {
+      ...binding,
+      acknowledgeExecution: async (conversationKey, turnId) => {
+        acknowledged.push(`${conversationKey}/${turnId}`);
+      },
+      abandonExecution: async (conversationKey, turnId) => {
+        abandoned.push(`${conversationKey}/${turnId}`);
+      },
+    },
+  });
+  try {
+    const events = await collect(backend.send({ turnId: 'turn-a', text: 'task' }));
+    assert.match(events[0]?.type === 'error' ? events[0].message : '', /completion text exceeds/u);
+    assert.deepEqual(acknowledged, []);
+    assert.deepEqual(abandoned, ['session-a/turn-a']);
+  } finally {
+    await backend.dispose();
+    await root.fiber.dispose();
+  }
+});
+
 test('executor backend converts plugin output and result to ordinary Session events', async () => {
   const { root, binding } = fixture(async (request, context) => {
     assert.equal(request.instructions, 'child instructions');
